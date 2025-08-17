@@ -15,7 +15,9 @@ class UserModelTestCase(unittest.TestCase):
         self.app_context.pop()
         
     def test_user_creation(self):
-        user = User(username='testuser', email='user_1@test.com')
+        user = User(username='user_1', email='user_1@test.com')
         db.session.add(user)
         db.session.commit()
         self.assertIsNotNone(user.id)
+        self.assertEqual(user.username, 'user_1')
+        self.assertEqual(user.email, 'user_1@test.com')
