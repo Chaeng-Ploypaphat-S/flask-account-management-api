@@ -1,5 +1,6 @@
 from flask import Blueprint, jsonify, request
 from flask_login import LoginManager, login_user, login_required
+from flask_jwt_extended import create_access_token, jwt_required, create_access_token, get_jwt_identity, create_refresh_token
 from .models import User, db
 
 main = Blueprint('main', __name__)
@@ -9,7 +10,7 @@ login_manager = LoginManager()
 def get_users():
     users = User.query.all()
     return jsonify([
-        {'username': user.username, 'email': user.email}
+        {'username': user.username, 'email': user.email, 'id': user.id}
         for user in users
     ])
 
@@ -43,21 +44,56 @@ def register():
     
     return jsonify({'message': 'Registration successful'}), 201
 
+
 @main.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
     if not data or any(key not in data for key in ('username', 'password')):
         return jsonify({'error': 'Missing data'}), 400
-
+    
     user = User.query.filter_by(username=data['username']).first()
     if user is None or not user.check_password(data['password']):
         return jsonify({'error': 'Invalid username or password'}), 401
 
-    login_user(user)
+    access_token = create_access_token(identity=user.id)
+    refresh_token = create_refresh_token(identity=user.id)
 
-    return jsonify({'message': 'Login successful'}), 200
+    return jsonify({'access_token': access_token, 'refresh_token': refresh_token}), 200
 
 @main.route('/protected', methods=['GET'])
-@login_required
+@jwt_required()
 def protected():
     return jsonify({'message': 'This is a protected route'}), 200
+
+@main.route('/refresh', methods=['POST'])
+@jwt_required(refresh=True)
+def refresh():
+    current_user = get_jwt_identity()
+    access_token = create_access_token(identity=current_user)
+    return jsonify({'access_token': access_token}), 200
+
+@main.route('/user/<int:user_id>', methods=['PUT'])
+def update_user(user_id):
+    user = User.query.get(user_id)
+    if user is None:
+        return jsonify({'error': 'User not found'}), 404
+
+    data = request.get_json()
+    user.username = data.get('username', user.username)
+    user.email = data.get('email', user.email)
+    if 'password' in data:
+        user.set_password(data['password'])
+
+    db.session.commit()
+    
+    return jsonify({'message': 'User updated successfully'}), 200
+
+@main.route('/user/<int:user_id>', methods=['DELETE'])
+def delete_user(user_id):
+    user = User.query.get(user_id)
+    if user is None:
+        return jsonify({'error': 'User not found'}), 404
+
+    db.session.delete(user)
+    db.session.commit()
+    return jsonify({'message': 'User deleted successfully'}), 200
